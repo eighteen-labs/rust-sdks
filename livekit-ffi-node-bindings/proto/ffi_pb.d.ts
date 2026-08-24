@@ -28,7 +28,7 @@ import type { PerformRpcCallback, PerformRpcRequest, PerformRpcResponse, Registe
 import type { EnableRemoteTrackPublicationRequest, EnableRemoteTrackPublicationResponse, SetRemoteTrackPublicationQualityRequest, SetRemoteTrackPublicationQualityResponse, UpdateRemoteTrackPublicationDimensionRequest, UpdateRemoteTrackPublicationDimensionResponse } from "./track_publication_pb.js";
 import type { ByteStreamOpenCallback, ByteStreamOpenRequest, ByteStreamOpenResponse, ByteStreamReaderEvent, ByteStreamReaderReadAllCallback, ByteStreamReaderReadAllRequest, ByteStreamReaderReadAllResponse, ByteStreamReaderReadIncrementalRequest, ByteStreamReaderReadIncrementalResponse, ByteStreamReaderWriteToFileCallback, ByteStreamReaderWriteToFileRequest, ByteStreamReaderWriteToFileResponse, ByteStreamWriterCloseCallback, ByteStreamWriterCloseRequest, ByteStreamWriterCloseResponse, ByteStreamWriterWriteCallback, ByteStreamWriterWriteRequest, ByteStreamWriterWriteResponse, StreamSendBytesCallback, StreamSendBytesRequest, StreamSendBytesResponse, StreamSendFileCallback, StreamSendFileRequest, StreamSendFileResponse, StreamSendTextCallback, StreamSendTextRequest, StreamSendTextResponse, TextStreamOpenCallback, TextStreamOpenRequest, TextStreamOpenResponse, TextStreamReaderEvent, TextStreamReaderReadAllCallback, TextStreamReaderReadAllRequest, TextStreamReaderReadAllResponse, TextStreamReaderReadIncrementalRequest, TextStreamReaderReadIncrementalResponse, TextStreamWriterCloseCallback, TextStreamWriterCloseRequest, TextStreamWriterCloseResponse, TextStreamWriterWriteCallback, TextStreamWriterWriteRequest, TextStreamWriterWriteResponse } from "./data_stream_pb.js";
 import type { DataTrackStreamEvent, DataTrackStreamReadRequest, DataTrackStreamReadResponse, DefineSchemaCallback, DefineSchemaRequest, DefineSchemaResponse, GetSchemaCallback, GetSchemaRequest, GetSchemaResponse, LocalDataTrackIsPublishedRequest, LocalDataTrackIsPublishedResponse, LocalDataTrackTryPushRequest, LocalDataTrackTryPushResponse, LocalDataTrackUnpublishRequest, LocalDataTrackUnpublishResponse, PublishDataTrackCallback, PublishDataTrackRequest, PublishDataTrackResponse, RemoteDataTrackIsPublishedRequest, RemoteDataTrackIsPublishedResponse, RemoteDataTrackSetPipelineOptionsRequest, RemoteDataTrackSetPipelineOptionsResponse, SubscribeDataTrackRequest, SubscribeDataTrackResponse } from "./data_track_pb.js";
-import type { CaptureSourceEvent, StartCaptureRequest, StartCaptureResponse, StopCaptureRequest, StopCaptureResponse } from "./capture_pb.js";
+import type { CaptureSourceEvent, NewCaptureSourceCallback, NewCaptureSourceRequest, NewCaptureSourceResponse, StartCaptureRequest, StartCaptureResponse, StopCaptureRequest, StopCaptureResponse } from "./capture_pb.js";
 
 /**
  * @generated from enum livekit.proto.LogLevel
@@ -614,6 +614,14 @@ export declare class FfiRequest extends Message<FfiRequest> {
     case: "readyForRoomEvent";
   } | {
     /**
+     * Capture sources (livekit-capture; requires the `capture` feature)
+     *
+     * @generated from field: livekit.proto.NewCaptureSourceRequest new_capture_source = 87;
+     */
+    value: NewCaptureSourceRequest;
+    case: "newCaptureSource";
+  } | {
+    /**
      * @generated from field: livekit.proto.StartCaptureRequest start_capture = 88;
      */
     value: StartCaptureRequest;
@@ -1188,6 +1196,14 @@ export declare class FfiResponse extends Message<FfiResponse> {
     case: "readyForRoomEvent";
   } | {
     /**
+     * Capture sources (livekit-capture; requires the `capture` feature)
+     *
+     * @generated from field: livekit.proto.NewCaptureSourceResponse new_capture_source = 87;
+     */
+    value: NewCaptureSourceResponse;
+    case: "newCaptureSource";
+  } | {
+    /**
      * @generated from field: livekit.proto.StartCaptureResponse start_capture = 88;
      */
     value: StartCaptureResponse;
@@ -1506,6 +1522,14 @@ export declare class FfiEvent extends Message<FfiEvent> {
      */
     value: GetSchemaCallback;
     case: "getSchema";
+  } | {
+    /**
+     * Capture sources (livekit-capture; requires the `capture` feature)
+     *
+     * @generated from field: livekit.proto.NewCaptureSourceCallback new_capture_source = 47;
+     */
+    value: NewCaptureSourceCallback;
+    case: "newCaptureSource";
   } | {
     /**
      * @generated from field: livekit.proto.CaptureSourceEvent capture_source_event = 48;
