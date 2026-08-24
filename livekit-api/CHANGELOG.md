@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.6.4 (2026-08-24)
+
+### Fixes
+
+- differentiate signal connection errors correctly from timeouts - #1234 (@lukasIO)
+- fix(uniffi): register the Bytes custom type once, in livekit-common - #1343 (@pblazej)
+
 ## 0.6.3 (2026-08-10)
 
 ### Features

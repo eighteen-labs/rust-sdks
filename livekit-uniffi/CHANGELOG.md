@@ -1,3 +1,11 @@
+## 0.1.9 (2026-08-24)
+
+### Fixes
+
+- differentiate signal connection errors correctly from timeouts - #1234 (@lukasIO)
+- Expose `RemoteDataTrack.set_pipeline_options` and `RemoteDataTrackPipelineOptions` (`max_partial_frames`) over UniFFI, matching the JS and Rust SDKs
+- Register the `Bytes` UniFFI custom type once in `livekit-common` and borrow it from each component with `uniffi::use_remote_type!`, so the converter is emitted once and the post-generation Swift workaround is no longer needed
+
 ## 0.1.8 (2026-08-03)
 
 ### Fixes
