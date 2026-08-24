@@ -4043,6 +4043,7 @@ dependencies = [
  "link-cplusplus",
  "livekit",
  "livekit-api",
+ "livekit-capture",
  "livekit-protocol",
  "log",
  "parking_lot",
