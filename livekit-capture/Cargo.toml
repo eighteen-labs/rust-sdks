@@ -36,6 +36,7 @@ tokio = ["tokio/rt"]
 
 # Pixel sources
 source-clock = ["dep:chrono", "dep:pollster", "dep:wgpu", "dep:yuv-sys"]
+source-device = []
 source-pattern = ["dep:pollster", "dep:wgpu", "dep:yuv-sys"]
 
 # Encoded sources
