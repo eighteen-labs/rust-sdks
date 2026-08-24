@@ -4144,6 +4144,8 @@ dependencies = [
  "dispatch2",
  "gstreamer",
  "gstreamer-app",
+ "image",
+ "libc",
  "livekit",
  "log",
  "objc2 0.6.4",
@@ -4156,6 +4158,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.19",
  "tokio",
+ "v4l",
  "wgpu",
  "yuv-sys",
 ]
