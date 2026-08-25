@@ -203,6 +203,7 @@ pub mod ffi {
         fn ice_gathering_state(self: &PeerConnection) -> IceGatheringState;
         fn ice_connection_state(self: &PeerConnection) -> IceConnectionState;
         fn close(self: &PeerConnection);
+        fn dispose(self: &PeerConnection);
 
         fn _shared_peer_connection() -> SharedPtr<PeerConnection>; // Ignore
     }

@@ -343,7 +343,22 @@ IceConnectionState PeerConnection::ice_connection_state() const {
 }
 
 void PeerConnection::close() const {
+  if (!peer_connection_) return;
   peer_connection_->Close();
+}
+
+// ato patch (see docs/adr on the LiveKit PeerConnection retention): close AND
+// release the native handle. Without this, one closed PeerConnection per
+// session stays alive for the lifetime of the PeerConnectionFactory, retained
+// inside the prebuilt libwebrtc. `peer_connection_` holds the PeerConnection
+// PROXY, so releasing it from any thread marshals destruction to the thread
+// that owns the connection.
+void PeerConnection::dispose() const {
+  if (!peer_connection_) {
+    return;
+  }
+  peer_connection_->Close();
+  peer_connection_ = nullptr;
 }
 
 // PeerConnectionObserver
