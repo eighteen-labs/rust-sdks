@@ -29,8 +29,10 @@ glib = { version = "0.21.3", optional = true }
 jni = "0.21"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-webrtc-sys = { workspace = true }
-livekit-runtime = { workspace = true, features = ["tokio"] }
+# ato patch: version deps (as crates.io normalized them) instead of workspace
+# path deps, so a git checkout of this fork pulls NO sibling crates from git.
+webrtc-sys = { version = "0.3.42" }
+livekit-runtime = { version = "0.4.0", features = ["tokio"], default-features = false }
 lazy_static = { workspace = true }
 parking_lot = { workspace = true }
 tokio = { workspace = true, default-features = false, features = ["sync", "macros"] }

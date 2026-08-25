@@ -109,3 +109,10 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 debug = false
+
+# ato patch: libwebrtc now names webrtc-sys by version (matching the crates.io
+# normalized manifest) so downstream git consumers pull no sibling crates from
+# this repo. This patch keeps a standalone build of THIS workspace using the
+# patched in-tree webrtc-sys. Consumers ignore this table.
+[patch.crates-io]
+webrtc-sys = { path = "webrtc-sys" }

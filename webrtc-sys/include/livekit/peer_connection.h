@@ -136,6 +136,8 @@ class PeerConnection : webrtc::PeerConnectionObserver {
   IceConnectionState ice_connection_state() const;
 
   void close() const;
+  // ato patch: close AND release the native handle (see peer_connection.cpp).
+  void dispose() const;
 
   void OnSignalingChange(
       webrtc::PeerConnectionInterface::SignalingState new_state) override;
@@ -197,7 +199,8 @@ class PeerConnection : webrtc::PeerConnectionObserver {
   std::shared_ptr<RtcRuntime> rtc_runtime_;
   webrtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pc_factory_;
   rust::Box<PeerConnectionObserverWrapper> observer_;
-  webrtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_;
+  // ato patch: mutable so the const bridge method dispose() can release it.
+  mutable webrtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_;
 };
 
 static std::shared_ptr<PeerConnection> _shared_peer_connection() {
