@@ -34,7 +34,9 @@ glib = { version = "0.21.3", optional = true }
 jni = "0.21"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-webrtc-sys = { workspace = true }
+# ato patch: version dep (as crates.io normalized it) instead of a workspace
+# path dep, so a git checkout of this fork pulls NO sibling crates from git.
+webrtc-sys = { version = "0.3.47" }
 tokio-stream = { workspace = true }
 lazy_static = { workspace = true }
 parking_lot = { workspace = true }
