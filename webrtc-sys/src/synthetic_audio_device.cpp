@@ -55,7 +55,9 @@ int32_t SyntheticAudioDevice::Init() {
       webrtc::RepeatingTaskHandle::Start(audio_queue_.get(), [this]() {
         webrtc::MutexLock lock(&mutex_);
 
-        if (playing_) {
+        // The pump can be (re)started by Init() before WebRTC registers a
+        // transport, so a null transport means "nothing to pump yet".
+        if (playing_ && audio_transport_) {
           int64_t elapsed_time_ms = -1;
           int64_t ntp_time_ms = -1;
           size_t n_samples_out = 0;

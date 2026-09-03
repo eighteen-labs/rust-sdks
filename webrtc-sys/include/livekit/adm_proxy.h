@@ -128,6 +128,11 @@ class AdmProxy : public webrtc::AudioDeviceModule {
   int32_t Terminate() override;
   bool Initialized() const override;
 
+  // Whether the synthetic ADM — the 10 ms pump that delivers decoded remote
+  // audio to FFI sinks — is currently initialized. False between WebRTC's
+  // Terminate() of the last PeerConnection and Init() of the next one.
+  bool synthetic_initialized() const;
+
   int16_t PlayoutDevices() override;
   int16_t RecordingDevices() override;
   int32_t PlayoutDeviceName(uint16_t index,

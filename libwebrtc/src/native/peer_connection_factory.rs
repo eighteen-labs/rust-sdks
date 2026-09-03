@@ -331,6 +331,13 @@ impl PeerConnectionFactory {
     pub fn is_platform_adm_active(&self) -> bool {
         self.sys_handle.audio_device().is_platform_adm_active()
     }
+
+    /// Whether the synthetic ADM (the pump that delivers decoded remote audio
+    /// to sinks) is initialized. WebRTC terminates it with the last
+    /// PeerConnection and must re-initialize it with the next.
+    pub fn synthetic_adm_initialized(&self) -> bool {
+        self.sys_handle.audio_device().synthetic_initialized()
+    }
 }
 
 #[cfg(test)]
@@ -358,5 +365,59 @@ mod tests {
         factory.set_adm_recording_enabled(!initial_recording);
         assert_eq!(factory.adm_recording_enabled(), !initial_recording);
         factory.set_adm_recording_enabled(initial_recording);
+    }
+
+    /// Polls `f` every 10 ms until it returns true or `budget` elapses.
+    fn eventually(budget: std::time::Duration, mut f: impl FnMut() -> bool) -> bool {
+        let start = std::time::Instant::now();
+        while start.elapsed() < budget {
+            if f() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        f()
+    }
+
+    /// WebRTC's lazy media engine terminates the ADM when the last
+    /// PeerConnection is destroyed and re-initializes it when the next one is
+    /// created (`pc/connection_context.h`, `MediaEngineReference`). The
+    /// synthetic ADM must survive that cycle, or every room after a
+    /// PeerConnection-less moment is silent. No server, no network: creating
+    /// a PeerConnection is enough to take the reference, closing it enough to
+    /// release it (`close()` releases the native handle through `dispose()`).
+    #[tokio::test]
+    async fn synthetic_adm_survives_last_peer_connection_teardown() {
+        let _guard = TEST_MUTEX.lock().expect("test mutex poisoned");
+        let _ = env_logger::builder().is_test(true).try_init();
+        let budget = std::time::Duration::from_secs(5);
+
+        let factory = PeerConnectionFactory::default();
+        assert!(factory.synthetic_adm_initialized(), "fresh factory starts the pump");
+
+        let pc1 = factory
+            .create_peer_connection(crate::peer_connection_factory::RtcConfiguration::default())
+            .expect("create pc1");
+        assert!(factory.synthetic_adm_initialized(), "pump alive with one PC");
+
+        // The kill: closing the only PC releases the media engine, which
+        // terminates the ADM on the worker thread — asynchronously from here.
+        pc1.close();
+        drop(pc1);
+        assert!(
+            eventually(budget, || !factory.synthetic_adm_initialized()),
+            "closing the last PC must terminate the synthetic ADM (mechanism)"
+        );
+
+        // The cure: the next PC re-initializes the media engine, whose Init()
+        // must bring the pump back.
+        let pc2 = factory
+            .create_peer_connection(crate::peer_connection_factory::RtcConfiguration::default())
+            .expect("create pc2");
+        assert!(
+            eventually(budget, || factory.synthetic_adm_initialized()),
+            "creating the next PC must re-initialize the synthetic ADM (cure)"
+        );
+        pc2.close();
     }
 }

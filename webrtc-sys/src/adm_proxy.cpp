@@ -301,8 +301,33 @@ int32_t AdmProxy::RegisterAudioCallback(webrtc::AudioTransport* transport) {
 }
 
 int32_t AdmProxy::Init() {
-  // Init is a no-op - Platform ADM is created lazily via AcquirePlatformAdm()
-  return 0;
+  webrtc::MutexLock lock(&mutex_);
+
+  // WebRTC's lazy media engine (pc/connection_context.h, MediaEngineReference)
+  // calls Terminate() when the last PeerConnection is destroyed and Init()
+  // when the next one is created, so this runs many times over the proxy's
+  // life. Terminate() really tears both sub-ADMs down; this has to really
+  // bring them back, or every room after a PeerConnection-less moment is
+  // silent: the synthetic pump is the only thing that delivers decoded remote
+  // audio to FFI sinks.
+  int32_t result = 0;
+  if (synthetic_adm_) {
+    result = synthetic_adm_->Init();  // re-entrant: rebuilds the queue and task
+    if (result != 0) {
+      RTC_LOG(LS_ERROR) << "AdmProxy::Init: synthetic ADM Init() failed with error="
+                        << result;
+    }
+  }
+
+  // Mirror the constructor for the platform ADM: a failure is logged and the
+  // module dropped, never propagated. adm_helpers::Init RTC_CHECKs our return
+  // value, and a platform-audio hiccup must not abort a process whose
+  // synthetic path works.
+  if (platform_adm_ && platform_adm_->Init() != 0) {
+    RTC_LOG(LS_ERROR) << "AdmProxy::Init: Platform ADM re-init failed";
+    platform_adm_ = nullptr;
+  }
+  return result;
 }
 
 int32_t AdmProxy::Terminate() {
@@ -325,6 +350,11 @@ bool AdmProxy::Initialized() const {
   bool synthetic_init = synthetic_adm_ && synthetic_adm_->Initialized();
   bool platform_init = platform_adm_ && platform_adm_->Initialized();
   return synthetic_init || platform_init;
+}
+
+bool AdmProxy::synthetic_initialized() const {
+  webrtc::MutexLock lock(&mutex_);
+  return synthetic_adm_ && synthetic_adm_->Initialized();
 }
 
 int16_t AdmProxy::PlayoutDevices() {
@@ -442,8 +472,14 @@ int32_t AdmProxy::InitPlayout() {
     return -1;
   }
 
-  // Synthetic mode
+  // Synthetic mode. Refuse when the pump is not initialized, as the stock
+  // AudioDeviceModuleImpl does (CHECKinitialized_): AudioState acts on this
+  // result, and a success with no pump behind it is a silent room.
   if (synthetic_adm_) {
+    if (!synthetic_adm_->Initialized()) {
+      RTC_LOG(LS_ERROR) << "AdmProxy::InitPlayout: synthetic ADM not initialized";
+      return -1;
+    }
     int32_t result = synthetic_adm_->InitPlayout();
     if (result == 0) {
       playout_initialized_ = true;
@@ -508,8 +544,14 @@ int32_t AdmProxy::StartPlayout() {
     return -1;
   }
 
-  // Synthetic mode
+  // Synthetic mode. Same refusal as InitPlayout(): never report a playout
+  // that nothing is pumping.
   if (synthetic_adm_) {
+    if (!synthetic_adm_->Initialized()) {
+      RTC_LOG(LS_ERROR) << "AdmProxy::StartPlayout: synthetic ADM not initialized";
+      playing_ = false;
+      return -1;
+    }
     return synthetic_adm_->StartPlayout();
   }
   return -1;

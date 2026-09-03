@@ -177,6 +177,7 @@ pub mod native {
         fn release_platform_adm(&self);
         fn platform_adm_ref_count(&self) -> i32;
         fn is_platform_adm_active(&self) -> bool;
+        fn synthetic_adm_initialized(&self) -> bool;
     }
 
     impl PeerConnectionFactoryExt for PeerConnectionFactory {
@@ -318,6 +319,10 @@ pub mod native {
 
         fn is_platform_adm_active(&self) -> bool {
             self.handle.is_platform_adm_active()
+        }
+
+        fn synthetic_adm_initialized(&self) -> bool {
+            self.handle.synthetic_adm_initialized()
         }
     }
 }

@@ -75,6 +75,7 @@ class AudioDeviceController {
   void release_platform_adm() const;
   int platform_adm_ref_count() const;
   bool is_platform_adm_active() const;
+  bool synthetic_initialized() const;
 
  private:
   webrtc::scoped_refptr<AdmProxy> adm_proxy_;

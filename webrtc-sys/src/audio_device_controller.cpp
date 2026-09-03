@@ -205,4 +205,8 @@ bool AudioDeviceController::is_platform_adm_active() const {
   return adm_proxy_->is_platform_adm_active();
 }
 
+bool AudioDeviceController::synthetic_initialized() const {
+  return adm_proxy_->synthetic_initialized();
+}
+
 }  // namespace livekit_ffi
