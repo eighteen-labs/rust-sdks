@@ -17,6 +17,13 @@ use webrtc_sys::apm::ffi as sys_apm;
 
 use crate::{RtcError, RtcErrorType};
 
+pub use sys_apm::Aec3Tuning;
+
+/// WebRTC's stock `Aec3Tuning`, read from the linked libwebrtc.
+pub fn aec3_default_tuning() -> Aec3Tuning {
+    sys_apm::aec3_default_tuning()
+}
+
 pub struct AudioProcessingModule {
     sys_handle: UniquePtr<sys_apm::AudioProcessingModule>,
 }
@@ -34,6 +41,25 @@ impl AudioProcessingModule {
                 gain_controller_enabled,
                 high_pass_filter_enabled,
                 noise_suppression_enabled,
+            ),
+        }
+    }
+
+    /// Like [`Self::new`], with the echo canceller built from `tuning`.
+    pub fn with_aec3_tuning(
+        echo_canceller_enabled: bool,
+        gain_controller_enabled: bool,
+        high_pass_filter_enabled: bool,
+        noise_suppression_enabled: bool,
+        tuning: Aec3Tuning,
+    ) -> Self {
+        Self {
+            sys_handle: sys_apm::create_apm_with_aec3_tuning(
+                echo_canceller_enabled,
+                gain_controller_enabled,
+                high_pass_filter_enabled,
+                noise_suppression_enabled,
+                tuning,
             ),
         }
     }

@@ -17,12 +17,20 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
+#include "api/audio/echo_canceller3_config.h"
 #include "api/scoped_refptr.h"
 #include "api/video_codecs/video_decoder_factory.h"
 #include "api/video_codecs/video_encoder_factory.h"
 #include "modules/audio_processing/aec3/echo_canceller3.h"
 #include "modules/audio_processing/audio_buffer.h"
+
+namespace livekit_ffi {
+class AudioProcessingModule;
+}  // namespace livekit_ffi
+
+#include "webrtc-sys/src/apm.rs.h"
 
 namespace livekit_ffi {
 
@@ -31,6 +39,9 @@ struct AudioProcessingConfig {
   bool gain_controller_enabled;
   bool high_pass_filter_enabled;
   bool noise_suppression_enabled;
+  // When set, the echo canceller is built from this tuning instead of
+  // libwebrtc's defaults.
+  std::optional<Aec3Tuning> aec3_tuning;
 
   webrtc::AudioProcessing::Config ToWebrtcConfig() const {
     webrtc::AudioProcessing::Config config;
@@ -72,5 +83,14 @@ std::unique_ptr<AudioProcessingModule> create_apm(
     bool gain_controller_enabled,
     bool high_pass_filter_enabled,
     bool noise_suppression_enabled);
+
+Aec3Tuning aec3_default_tuning();
+
+std::unique_ptr<AudioProcessingModule> create_apm_with_aec3_tuning(
+    bool echo_canceller_enabled,
+    bool gain_controller_enabled,
+    bool high_pass_filter_enabled,
+    bool noise_suppression_enabled,
+    Aec3Tuning tuning);
 
 }  // namespace livekit_ffi
