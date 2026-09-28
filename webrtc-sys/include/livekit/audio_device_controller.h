@@ -78,6 +78,7 @@ class AudioDeviceController {
   void release_platform_adm() const;
   int platform_adm_ref_count() const;
   bool is_platform_adm_active() const;
+  bool synthetic_initialized() const;
 
  private:
   // The AdmProxy marshals its calls onto the runtime's worker thread, keep
