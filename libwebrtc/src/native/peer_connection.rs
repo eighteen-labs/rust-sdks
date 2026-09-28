@@ -365,7 +365,11 @@ impl PeerConnection {
     }
 
     pub fn close(&self) {
-        self.sys_handle.close();
+        // ato patch: dispose (close + release the native handle) instead of a
+        // bare close. A closed-but-held PeerConnection is retained for the
+        // factory's lifetime by the prebuilt libwebrtc; releasing the proxy
+        // here frees the full session graph (~540 KB/room on-device).
+        self.sys_handle.dispose();
     }
 
     pub fn connection_state(&self) -> PeerConnectionState {

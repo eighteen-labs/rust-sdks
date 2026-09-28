@@ -99,13 +99,44 @@ bool PeerConnection::Initialize(
                       << result.error().message();
     return false;
   }
+  webrtc::MutexLock lock(&handle_mutex_);
   peer_connection_ = std::move(result.value());
   return true;
 }
 
+// ato patch: see handle_mutex_ in peer_connection.h.
+webrtc::scoped_refptr<webrtc::PeerConnectionInterface> PeerConnection::handle()
+    const {
+  webrtc::MutexLock lock(&handle_mutex_);
+  return peer_connection_;
+}
+
+// ato patch: what a call on a disposed PeerConnection reports, in the shape
+// WebRTC itself uses for a call on a closed one.
+static webrtc::RTCError disposed_error() {
+  return webrtc::RTCError(webrtc::RTCErrorType::INVALID_STATE,
+                          "PeerConnection is disposed");
+}
+
+// ato patch: completes an async call made on a disposed PeerConnection. The
+// Rust completions block on a channel send, so they must never run on the
+// calling thread, which is a tokio worker; WebRTC reports a closed
+// PeerConnection's errors from the signaling thread, and so does this.
+template <typename Complete>
+static void complete_disposed(const std::shared_ptr<RtcRuntime>& rtc_runtime,
+                              rust::Box<PeerContext> ctx,
+                              Complete complete) {
+  auto owned_ctx = std::make_shared<rust::Box<PeerContext>>(std::move(ctx));
+  rtc_runtime->signaling_thread()->PostTask(
+      [owned_ctx, complete] { complete(std::move(*owned_ctx)); });
+}
+
 void PeerConnection::set_configuration(RtcConfiguration config) const {
-  auto result =
-      peer_connection_->SetConfiguration(to_native_rtc_configuration(config));
+  auto pc = handle();
+  if (!pc) {
+    throw std::runtime_error(serialize_error(to_error(disposed_error())));
+  }
+  auto result = pc->SetConfiguration(to_native_rtc_configuration(config));
 
   if (!result.ok()) {
     throw std::runtime_error(serialize_error(to_error(result)));
@@ -118,12 +149,19 @@ void PeerConnection::create_offer(
     rust::Fn<void(rust::Box<PeerContext>, std::unique_ptr<SessionDescription>)>
         on_success,
     rust::Fn<void(rust::Box<PeerContext>, RtcError)> on_error) const {
+  auto pc = handle();
+  if (!pc) {
+    complete_disposed(rtc_runtime_, std::move(ctx),
+                      [on_error](rust::Box<PeerContext> ctx) {
+                        on_error(std::move(ctx), to_error(disposed_error()));
+                      });
+    return;
+  }
   webrtc::scoped_refptr<NativeCreateSdpObserver> observer =
       webrtc::make_ref_counted<NativeCreateSdpObserver>(std::move(ctx), on_success,
                                                      on_error);
 
-  peer_connection_->CreateOffer(observer.get(),
-                                to_native_offer_answer_options(options));
+  pc->CreateOffer(observer.get(), to_native_offer_answer_options(options));
 }
 
 void PeerConnection::create_answer(
@@ -132,46 +170,79 @@ void PeerConnection::create_answer(
     rust::Fn<void(rust::Box<PeerContext>, std::unique_ptr<SessionDescription>)>
         on_success,
     rust::Fn<void(rust::Box<PeerContext>, RtcError)> on_error) const {
+  auto pc = handle();
+  if (!pc) {
+    complete_disposed(rtc_runtime_, std::move(ctx),
+                      [on_error](rust::Box<PeerContext> ctx) {
+                        on_error(std::move(ctx), to_error(disposed_error()));
+                      });
+    return;
+  }
   webrtc::scoped_refptr<NativeCreateSdpObserver> observer =
       webrtc::make_ref_counted<NativeCreateSdpObserver>(std::move(ctx), on_success,
                                                      on_error);
 
-  peer_connection_->CreateAnswer(observer.get(),
-                                 to_native_offer_answer_options(options));
+  pc->CreateAnswer(observer.get(), to_native_offer_answer_options(options));
 }
 
 void PeerConnection::set_local_description(
     std::unique_ptr<SessionDescription> desc,
     rust::Box<PeerContext> ctx,
     rust::Fn<void(rust::Box<PeerContext>, RtcError)> on_complete) const {
+  auto pc = handle();
+  if (!pc) {
+    complete_disposed(rtc_runtime_, std::move(ctx),
+                      [on_complete](rust::Box<PeerContext> ctx) {
+                        on_complete(std::move(ctx), to_error(disposed_error()));
+                      });
+    return;
+  }
   webrtc::scoped_refptr<NativeSetLocalSdpObserver> observer =
       webrtc::make_ref_counted<NativeSetLocalSdpObserver>(std::move(ctx),
                                                        on_complete);
 
-  peer_connection_->SetLocalDescription(desc->clone()->release(), observer);
+  pc->SetLocalDescription(desc->clone()->release(), observer);
 }
 
 void PeerConnection::set_remote_description(
     std::unique_ptr<SessionDescription> desc,
     rust::Box<PeerContext> ctx,
     rust::Fn<void(rust::Box<PeerContext>, RtcError)> on_complete) const {
+  auto pc = handle();
+  if (!pc) {
+    complete_disposed(rtc_runtime_, std::move(ctx),
+                      [on_complete](rust::Box<PeerContext> ctx) {
+                        on_complete(std::move(ctx), to_error(disposed_error()));
+                      });
+    return;
+  }
   webrtc::scoped_refptr<NativeSetRemoteSdpObserver> observer =
       webrtc::make_ref_counted<NativeSetRemoteSdpObserver>(std::move(ctx),
                                                         on_complete);
 
-  peer_connection_->SetRemoteDescription(desc->clone()->release(), observer);
+  pc->SetRemoteDescription(desc->clone()->release(), observer);
 }
 
 void PeerConnection::restart_ice() const {
-  peer_connection_->RestartIce();
+  if (auto pc = handle()) {
+    pc->RestartIce();
+  }
 }
 
 void PeerConnection::add_ice_candidate(
     std::shared_ptr<IceCandidate> candidate,
     rust::Box<PeerContext> ctx,
     rust::Fn<void(rust::Box<PeerContext>, RtcError)> on_complete) const {
+  auto pc = handle();
+  if (!pc) {
+    complete_disposed(rtc_runtime_, std::move(ctx),
+                      [on_complete](rust::Box<PeerContext> ctx) {
+                        on_complete(std::move(ctx), to_error(disposed_error()));
+                      });
+    return;
+  }
   auto owned_ctx = std::make_shared<rust::Box<PeerContext>>(std::move(ctx));
-  peer_connection_->AddIceCandidate(
+  pc->AddIceCandidate(
       candidate->release(), [owned_ctx, on_complete](const webrtc::RTCError& err) {
         on_complete(std::move(*owned_ctx), to_error(err));
       });
@@ -180,9 +251,12 @@ void PeerConnection::add_ice_candidate(
 std::shared_ptr<DataChannel> PeerConnection::create_data_channel(
     rust::String label,
     DataChannelInit init) const {
+  auto pc = handle();
+  if (!pc) {
+    throw std::runtime_error(serialize_error(to_error(disposed_error())));
+  }
   webrtc::DataChannelInit rtc_init = to_native_data_channel_init(init);
-  auto result =
-      peer_connection_->CreateDataChannelOrError(label.c_str(), &rtc_init);
+  auto result = pc->CreateDataChannelOrError(label.c_str(), &rtc_init);
 
   if (!result.ok()) {
     throw std::runtime_error(serialize_error(to_error(result.error())));
@@ -194,18 +268,25 @@ std::shared_ptr<DataChannel> PeerConnection::create_data_channel(
 std::shared_ptr<RtpSender> PeerConnection::add_track(
     std::shared_ptr<MediaStreamTrack> track,
     const rust::Vec<rust::String>& stream_ids) const {
+  auto pc = handle();
+  if (!pc) {
+    throw std::runtime_error(serialize_error(to_error(disposed_error())));
+  }
   std::vector<std::string> std_stream_ids(stream_ids.begin(), stream_ids.end());
-  auto result = peer_connection_->AddTrack(track->rtc_track(), std_stream_ids);
+  auto result = pc->AddTrack(track->rtc_track(), std_stream_ids);
   if (!result.ok()) {
     throw std::runtime_error(serialize_error(to_error(result.error())));
   }
 
-  return std::make_shared<RtpSender>(rtc_runtime_, result.value(),
-                                     peer_connection_);
+  return std::make_shared<RtpSender>(rtc_runtime_, result.value(), pc);
 }
 
 void PeerConnection::remove_track(std::shared_ptr<RtpSender> sender) const {
-  auto error = peer_connection_->RemoveTrackOrError(sender->rtc_sender());
+  auto pc = handle();
+  if (!pc) {
+    throw std::runtime_error(serialize_error(to_error(disposed_error())));
+  }
+  auto error = pc->RemoveTrackOrError(sender->rtc_sender());
   if (!error.ok())
     throw std::runtime_error(serialize_error(to_error(error)));
 }
@@ -213,137 +294,193 @@ void PeerConnection::remove_track(std::shared_ptr<RtpSender> sender) const {
 void PeerConnection::get_stats(
     rust::Box<PeerContext> ctx,
     rust::Fn<void(rust::Box<PeerContext>, rust::String)> on_stats) const {
+  auto pc = handle();
+  if (!pc) {
+    // An empty report, which the Rust side reads as no stats.
+    complete_disposed(rtc_runtime_, std::move(ctx),
+                      [on_stats](rust::Box<PeerContext> ctx) {
+                        on_stats(std::move(ctx), rust::String());
+                      });
+    return;
+  }
   auto observer = webrtc::make_ref_counted<NativeRtcStatsCollector<PeerContext>>(
       std::move(ctx), on_stats);
-  peer_connection_->GetStats(observer.get());
+  pc->GetStats(observer.get());
 }
 
 std::shared_ptr<RtpTransceiver> PeerConnection::add_transceiver(
     std::shared_ptr<MediaStreamTrack> track,
     RtpTransceiverInit init) const {
-  auto result = peer_connection_->AddTransceiver(
-      track->rtc_track(), to_native_rtp_transceiver_init(init));
+  auto pc = handle();
+  if (!pc) {
+    throw std::runtime_error(serialize_error(to_error(disposed_error())));
+  }
+  auto result = pc->AddTransceiver(track->rtc_track(),
+                                   to_native_rtp_transceiver_init(init));
   if (!result.ok())
     throw std::runtime_error(serialize_error(to_error(result.error())));
 
-  return std::make_shared<RtpTransceiver>(rtc_runtime_, result.value(),
-                                          peer_connection_);
+  return std::make_shared<RtpTransceiver>(rtc_runtime_, result.value(), pc);
 }
 
 std::shared_ptr<RtpTransceiver> PeerConnection::add_transceiver_for_media(
     MediaType media_type,
     RtpTransceiverInit init) const {
-  auto result = peer_connection_->AddTransceiver(
-      static_cast<webrtc::MediaType>(media_type),
-      to_native_rtp_transceiver_init(init));
+  auto pc = handle();
+  if (!pc) {
+    throw std::runtime_error(serialize_error(to_error(disposed_error())));
+  }
+  auto result = pc->AddTransceiver(static_cast<webrtc::MediaType>(media_type),
+                                   to_native_rtp_transceiver_init(init));
 
   if (!result.ok())
     throw std::runtime_error(serialize_error(to_error(result.error())));
 
-  return std::make_shared<RtpTransceiver>(rtc_runtime_, result.value(),
-                                          peer_connection_);
+  return std::make_shared<RtpTransceiver>(rtc_runtime_, result.value(), pc);
 }
 
 rust::Vec<RtpSenderPtr> PeerConnection::get_senders() const {
   rust::Vec<RtpSenderPtr> vec;
-  for (auto sender : peer_connection_->GetSenders())
-    vec.push_back(RtpSenderPtr{
-        std::make_shared<RtpSender>(rtc_runtime_, sender, peer_connection_)});
+  auto pc = handle();
+  if (!pc) {
+    return vec;
+  }
+  for (auto sender : pc->GetSenders())
+    vec.push_back(
+        RtpSenderPtr{std::make_shared<RtpSender>(rtc_runtime_, sender, pc)});
 
   return vec;
 }
 
 rust::Vec<RtpReceiverPtr> PeerConnection::get_receivers() const {
   rust::Vec<RtpReceiverPtr> vec;
-  for (auto receiver : peer_connection_->GetReceivers())
-    vec.push_back(RtpReceiverPtr{std::make_shared<RtpReceiver>(
-        rtc_runtime_, receiver, peer_connection_)});
+  auto pc = handle();
+  if (!pc) {
+    return vec;
+  }
+  for (auto receiver : pc->GetReceivers())
+    vec.push_back(RtpReceiverPtr{
+        std::make_shared<RtpReceiver>(rtc_runtime_, receiver, pc)});
 
   return vec;
 }
 
 rust::Vec<RtpTransceiverPtr> PeerConnection::get_transceivers() const {
   rust::Vec<RtpTransceiverPtr> vec;
-  for (auto transceiver : peer_connection_->GetTransceivers())
-    vec.push_back(RtpTransceiverPtr{std::make_shared<RtpTransceiver>(
-        rtc_runtime_, transceiver, peer_connection_)});
+  auto pc = handle();
+  if (!pc) {
+    return vec;
+  }
+  for (auto transceiver : pc->GetTransceivers())
+    vec.push_back(RtpTransceiverPtr{
+        std::make_shared<RtpTransceiver>(rtc_runtime_, transceiver, pc)});
 
   return vec;
 }
 
-std::unique_ptr<SessionDescription> PeerConnection::current_local_description()
-    const {
-  auto local_description = peer_connection_->current_local_description();
-  if (local_description)
-    return std::make_unique<SessionDescription>(local_description->Clone());
+// ato patch: the description getters share one shape — no handle or no
+// description both read as none.
+static std::unique_ptr<SessionDescription> clone_description(
+    const webrtc::SessionDescriptionInterface* description) {
+  if (description)
+    return std::make_unique<SessionDescription>(description->Clone());
 
   return nullptr;
+}
+
+std::unique_ptr<SessionDescription> PeerConnection::current_local_description()
+    const {
+  auto pc = handle();
+  return pc ? clone_description(pc->current_local_description()) : nullptr;
 }
 
 std::unique_ptr<SessionDescription> PeerConnection::current_remote_description()
     const {
-  auto remote_description = peer_connection_->current_remote_description();
-  if (remote_description)
-    return std::make_unique<SessionDescription>(remote_description->Clone());
-
-  return nullptr;
+  auto pc = handle();
+  return pc ? clone_description(pc->current_remote_description()) : nullptr;
 }
 
 std::unique_ptr<SessionDescription> PeerConnection::pending_local_description()
     const {
-  auto local_description = peer_connection_->pending_local_description();
-  if (local_description)
-    return std::make_unique<SessionDescription>(local_description->Clone());
-
-  return nullptr;
+  auto pc = handle();
+  return pc ? clone_description(pc->pending_local_description()) : nullptr;
 }
 
 std::unique_ptr<SessionDescription> PeerConnection::pending_remote_description()
     const {
-  auto remote_description = peer_connection_->pending_remote_description();
-  if (remote_description)
-    return std::make_unique<SessionDescription>(remote_description->Clone());
-
-  return nullptr;
+  auto pc = handle();
+  return pc ? clone_description(pc->pending_remote_description()) : nullptr;
 }
 
 std::unique_ptr<SessionDescription> PeerConnection::local_description() const {
-  auto local_description = peer_connection_->local_description();
-  if (local_description)
-    return std::make_unique<SessionDescription>(local_description->Clone());
-
-  return nullptr;
+  auto pc = handle();
+  return pc ? clone_description(pc->local_description()) : nullptr;
 }
 
 std::unique_ptr<SessionDescription> PeerConnection::remote_description() const {
-  auto remote_description = peer_connection_->remote_description();
-  if (remote_description)
-    return std::make_unique<SessionDescription>(remote_description->Clone());
-
-  return nullptr;
+  auto pc = handle();
+  return pc ? clone_description(pc->remote_description()) : nullptr;
 }
 
+// ato patch: a disposed PeerConnection reports the states WebRTC gives a
+// closed one.
 PeerConnectionState PeerConnection::connection_state() const {
-  return static_cast<PeerConnectionState>(
-      peer_connection_->peer_connection_state());
+  auto pc = handle();
+  if (!pc) {
+    return PeerConnectionState::Closed;
+  }
+  return static_cast<PeerConnectionState>(pc->peer_connection_state());
 }
 
 SignalingState PeerConnection::signaling_state() const {
-  return static_cast<SignalingState>(peer_connection_->signaling_state());
+  auto pc = handle();
+  if (!pc) {
+    return SignalingState::Closed;
+  }
+  return static_cast<SignalingState>(pc->signaling_state());
 }
 
 IceGatheringState PeerConnection::ice_gathering_state() const {
-  return static_cast<IceGatheringState>(
-      peer_connection_->ice_gathering_state());
+  auto pc = handle();
+  if (!pc) {
+    return IceGatheringState::IceGatheringComplete;
+  }
+  return static_cast<IceGatheringState>(pc->ice_gathering_state());
 }
 
 IceConnectionState PeerConnection::ice_connection_state() const {
-  return static_cast<IceConnectionState>(
-      peer_connection_->ice_connection_state());
+  auto pc = handle();
+  if (!pc) {
+    return IceConnectionState::IceConnectionClosed;
+  }
+  return static_cast<IceConnectionState>(pc->ice_connection_state());
 }
 
 void PeerConnection::close() const {
-  peer_connection_->Close();
+  if (auto pc = handle()) {
+    pc->Close();
+  }
+}
+
+// ato patch (see docs/adr on the LiveKit PeerConnection retention): close AND
+// release the native handle. Without this, one closed PeerConnection per
+// session stays alive for the lifetime of the PeerConnectionFactory, retained
+// inside the prebuilt libwebrtc. `peer_connection_` holds the PeerConnection
+// PROXY, so releasing it from any thread marshals destruction to the thread
+// that owns the connection. The handle is taken under the lock but closed and
+// released outside it: Close() blocks on the signaling thread, which may be
+// running an observer callback that calls back into this wrapper.
+void PeerConnection::dispose() const {
+  webrtc::scoped_refptr<webrtc::PeerConnectionInterface> pc;
+  {
+    webrtc::MutexLock lock(&handle_mutex_);
+    pc = std::move(peer_connection_);
+    peer_connection_ = nullptr;
+  }
+  if (!pc) {
+    return;
+  }
+  pc->Close();
 }
 
 // PeerConnectionObserver
@@ -456,20 +593,20 @@ void PeerConnection::OnAddTrack(
   }
 
   observer_->on_add_track(
-      std::make_unique<RtpReceiver>(rtc_runtime_, receiver, peer_connection_),
+      std::make_unique<RtpReceiver>(rtc_runtime_, receiver, handle()),
       std::move(vec));
 }
 
 void PeerConnection::OnTrack(
     webrtc::scoped_refptr<webrtc::RtpTransceiverInterface> transceiver) {
   observer_->on_track(std::make_unique<RtpTransceiver>(
-      rtc_runtime_, transceiver, peer_connection_));
+      rtc_runtime_, transceiver, handle()));
 }
 
 void PeerConnection::OnRemoveTrack(
     webrtc::scoped_refptr<webrtc::RtpReceiverInterface> receiver) {
   observer_->on_remove_track(
-      std::make_unique<RtpReceiver>(rtc_runtime_, receiver, peer_connection_));
+      std::make_unique<RtpReceiver>(rtc_runtime_, receiver, handle()));
 }
 
 void PeerConnection::OnInterestingUsage(int usage_pattern) {

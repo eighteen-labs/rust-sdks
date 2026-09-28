@@ -20,7 +20,8 @@ cxx = "1.0"
 log = { workspace = true }
 
 [build-dependencies]
-webrtc-sys-build = { workspace = true }
+# ato patch: version dep (as crates.io normalized it) — see libwebrtc/Cargo.toml.
+webrtc-sys-build = { version = "0.3.19" }
 cxx-build = "1.0"
 glob = "0.3"
 cc = { workspace = true }

@@ -20,6 +20,7 @@
 
 #include "api/peer_connection_interface.h"
 #include "api/scoped_refptr.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "livekit/data_channel.h"
 #include "livekit/helper.h"
 #include "livekit/jsep.h"
@@ -136,6 +137,8 @@ class PeerConnection : webrtc::PeerConnectionObserver {
   IceConnectionState ice_connection_state() const;
 
   void close() const;
+  // ato patch: close AND release the native handle (see peer_connection.cpp).
+  void dispose() const;
 
   void OnSignalingChange(
       webrtc::PeerConnectionInterface::SignalingState new_state) override;
@@ -197,7 +200,14 @@ class PeerConnection : webrtc::PeerConnectionObserver {
   std::shared_ptr<RtcRuntime> rtc_runtime_;
   webrtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pc_factory_;
   rust::Box<PeerConnectionObserverWrapper> observer_;
-  webrtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_;
+  // ato patch: the native handle, released by dispose(). Every method reads it
+  // through handle(), which copies it under handle_mutex_, so a dispose() on
+  // one thread never races a call on another, and a call that lands after
+  // dispose() sees null and fails cleanly instead of dereferencing it.
+  webrtc::scoped_refptr<webrtc::PeerConnectionInterface> handle() const;
+  mutable webrtc::Mutex handle_mutex_;
+  mutable webrtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_
+      RTC_GUARDED_BY(handle_mutex_);
 };
 
 static std::shared_ptr<PeerConnection> _shared_peer_connection() {
