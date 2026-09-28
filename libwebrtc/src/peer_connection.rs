@@ -343,4 +343,44 @@ mod tests {
         alice.close();
         bob.close();
     }
+
+    /// ato patch: `close()` disposes the native PeerConnection, so every call
+    /// that lands afterwards — a late signal message, a stats poll — must fail
+    /// or read as closed, never dereference the released handle.
+    #[tokio::test]
+    async fn calls_after_close_fail_cleanly() {
+        let _ = env_logger::builder().is_test(true).try_init();
+
+        let factory = PeerConnectionFactory::default();
+        let pc = factory.create_peer_connection(RtcConfiguration::default()).unwrap();
+        let _dc = pc.create_data_channel("test_dc", DataChannelInit::default()).unwrap();
+        let offer = pc.create_offer(OfferOptions::default()).await.unwrap();
+        let candidate = IceCandidate::parse(
+            "0",
+            0,
+            "candidate:1 1 udp 2122260223 192.0.2.1 50000 typ host generation 0",
+        )
+        .unwrap();
+
+        pc.close();
+        pc.close(); // idempotent
+
+        assert!(pc.create_offer(OfferOptions::default()).await.is_err());
+        assert!(pc.create_answer(AnswerOptions::default()).await.is_err());
+        assert!(pc.set_local_description(offer.clone()).await.is_err());
+        assert!(pc.set_remote_description(offer).await.is_err());
+        assert!(pc.add_ice_candidate(candidate).await.is_err());
+        assert!(pc.create_data_channel("late_dc", DataChannelInit::default()).is_err());
+        assert!(pc.set_configuration(RtcConfiguration::default()).is_err());
+        assert!(pc.get_stats().await.unwrap().is_empty());
+        assert!(pc.senders().is_empty());
+        assert!(pc.receivers().is_empty());
+        assert!(pc.transceivers().is_empty());
+        assert!(pc.current_local_description().is_none());
+        assert!(pc.current_remote_description().is_none());
+        assert_eq!(pc.connection_state(), PeerConnectionState::Closed);
+        assert_eq!(pc.signaling_state(), SignalingState::Closed);
+        assert_eq!(pc.ice_connection_state(), IceConnectionState::Closed);
+        pc.restart_ice();
+    }
 }
