@@ -144,6 +144,11 @@ void PeerConnection::set_configuration(RtcConfiguration config) const {
 }
 
 void PeerConnection::set_bitrate(BitrateSettings settings) const {
+  // ato patch: read the handle under the lock, like every other call.
+  auto pc = handle();
+  if (!pc) {
+    throw std::runtime_error(serialize_error(to_error(disposed_error())));
+  }
   webrtc::BitrateSettings bitrate;
   if (settings.has_min_bitrate_bps)
     bitrate.min_bitrate_bps = settings.min_bitrate_bps;
@@ -152,7 +157,7 @@ void PeerConnection::set_bitrate(BitrateSettings settings) const {
   if (settings.has_max_bitrate_bps)
     bitrate.max_bitrate_bps = settings.max_bitrate_bps;
 
-  auto result = peer_connection_->SetBitrate(bitrate);
+  auto result = pc->SetBitrate(bitrate);
 
   if (!result.ok()) {
     throw std::runtime_error(serialize_error(to_error(result)));
